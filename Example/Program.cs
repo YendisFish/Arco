@@ -16,12 +16,12 @@ Console.WriteLine(test2.x);
 
 class MyObj : IEnterable
 {
-    public Guid id { get; set; } = Guid.NewGuid();
+    public ArcoId id { get; set; } = new ArcoId(Guid.NewGuid().ToString());
     public string x = "Hello, World!";
 }
 
 class Test : IEnterable
 {
-    public Guid id { get; set; } = Guid.NewGuid();
-    public int x = 5;
+    public ArcoId id { get; set; } = new ArcoId(5023847);
+    public int x = 100000;
 }

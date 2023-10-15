@@ -2,5 +2,5 @@ namespace Arco;
 
 public interface IEnterable
 {
-    Guid id { get; set; }
+    ArcoId id { get; set; }
 }
