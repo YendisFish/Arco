@@ -13,7 +13,13 @@ public class ArcoDB
         
         if(dbMap.ContainsKey(hash))
         {
-            dbMap[hash].Add(obj.id.hash, obj);
+            if(dbMap[hash].ContainsKey(obj.id.hash))
+            {
+                dbMap[hash][obj.id.hash] = obj;
+            } else
+            {
+                dbMap[hash].Add(obj.id.hash, obj);
+            }
         } else
         {
             dbMap.Add(hash, new());

@@ -4,6 +4,8 @@ ArcoDB db = new();
 
 MyObj obj = new MyObj();
 db.Insert(obj);
+obj.x = "asdfasdfasdfasdfasdf";
+db.Insert(obj);
 
 MyObj obj2 = db.Query(obj);
 Console.WriteLine(obj2.x);
