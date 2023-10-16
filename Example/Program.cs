@@ -1,5 +1,7 @@
-﻿using System.Diagnostics;
-using System.Runtime.Serialization.Formatters.Binary;
+﻿using System.Collections;
+using System.Diagnostics;
+using System.Dynamic;
+using System.Reflection;
 using Arco;
 using Arco.Duplication;
 
@@ -22,7 +24,7 @@ obj2.a = 100;
 Stopwatch w = new();
 
 w.Start();
-MyObj? obj3 = db.DeepQuery(objs);
+MyObj? obj3 = db.Query(objs);
 w.Stop();
 
 Console.WriteLine(obj3!.a);
