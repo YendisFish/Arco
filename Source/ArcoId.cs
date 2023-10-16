@@ -1,8 +1,8 @@
 namespace Arco;
 
-public unsafe struct ArcoId
+public class ArcoId
 {
-    internal int hash { get; set; }
+    public int hash { get; set; }
 
     public ArcoId(string id)
     {

@@ -7,4 +7,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="DeepCloner" Version="0.10.4" />
+    <PackageReference Include="DeepEqual" Version="4.2.1" />
+  </ItemGroup>
+
 </Project>

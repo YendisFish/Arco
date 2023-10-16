@@ -1,29 +1,43 @@
-﻿using Arco;
+﻿using System.Diagnostics;
+using System.Runtime.Serialization.Formatters.Binary;
+using Arco;
+using Arco.Duplication;
 
 ArcoDB db = new();
 
-MyObj obj = new MyObj();
-db.Insert(obj);
-obj.x = "asdfasdfasdfasdfasdf";
-db.Insert(obj);
+for(int i = 0; i < 1000000; i++)
+{
+    MyObj obj = new();
+    db.Insert(obj);
+}
 
-MyObj obj2 = db.Query(obj);
-Console.WriteLine(obj2.x);
+MyObj objs = new();
+objs.a = 200;
+db.Insert(objs);
 
-Test test = new Test();
-db.Insert(test);
+MyObj obj2 = new();
+obj2.id = objs.id;
+obj2.a = 100;
 
-Test test2 = db.Query(test);
-Console.WriteLine(test2.x);
+Stopwatch w = new();
+
+w.Start();
+MyObj? obj3 = db.DeepQuery(objs);
+w.Stop();
+
+Console.WriteLine(obj3!.a);
+Console.WriteLine(w.Elapsed.Nanoseconds);
 
 class MyObj : IEnterable
 {
-    public ArcoId id { get; set; } = new ArcoId(Guid.NewGuid().ToString());
+    public ArcoId? id { get; set; } = new ArcoId(Guid.NewGuid().ToString());
     public string x = "Hello, World!";
+    public int a = 5;
+    public List<int> b = new List<int>() { 1 , 2, 3, 4, 5, 6, 7 };
 }
 
 class Test : IEnterable
 {
-    public ArcoId id { get; set; } = new ArcoId(5023847);
+    public ArcoId? id { get; set; } = new ArcoId(5023847);
     public int x = 100000;
 }
