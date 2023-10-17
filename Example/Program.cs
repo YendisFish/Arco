@@ -6,12 +6,19 @@ using Arco;
 using Arco.Duplication;
 
 ArcoDB db = new();
+Stopwatch w = new();
 
-for(int i = 0; i < 1000000; i++)
+w.Start();
+for(int i = 0; i < 10000000; i++)
 {
     MyObj obj = new();
     db.Insert(obj);
 }
+
+w.Stop();
+
+Console.WriteLine("write time: " + w.Elapsed.TotalSeconds);
+w.Reset();
 
 MyObj objs = new();
 objs.a = 200;
@@ -21,14 +28,17 @@ MyObj obj2 = new();
 obj2.id = objs.id;
 obj2.a = 100;
 
-Stopwatch w = new();
-
 w.Start();
-MyObj? obj3 = db.Query(objs);
+MyObj? obj3 = db.QueryById(objs);
+
 w.Stop();
 
 Console.WriteLine(obj3!.a);
-Console.WriteLine(w.Elapsed.Nanoseconds);
+Console.WriteLine(w.Elapsed.TotalMicroseconds);
+
+db.Insert(new Test());
+
+db.SaveState();
 
 class MyObj : IEnterable
 {

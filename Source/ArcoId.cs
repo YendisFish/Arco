@@ -2,22 +2,20 @@ namespace Arco;
 
 public class ArcoId
 {
-    public int hash { get; set; }
+    public string raw { get; set; }
 
     public ArcoId(string id)
     {
-        hash = id.GetHashCode();
+        raw = id;
     }
 
     public ArcoId(long id)
     {
-        string nid = id + "";
-        hash = nid.GetHashCode();
+        raw = id + "";
     }
     
     public ArcoId(DateTime id, string format)
     {
-        string nid = id.ToString(format);
-        hash = nid.GetHashCode();
+        raw = id.ToString(format);
     }
 }

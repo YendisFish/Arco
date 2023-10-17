@@ -4,6 +4,7 @@ using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using Arco.Duplication;
 using Arco.Native;
+using Arco.Snapshotting;
 using DeepEqual.Syntax;
 using Force.DeepCloner;
 
@@ -11,43 +12,61 @@ namespace Arco;
 
 public class ArcoDB
 {
-    internal Dictionary<int, Dictionary<int, IEnterable>> dbMap { get; set; } = new();
-    
+    internal Dictionary<string, Dictionary<string, IEnterable>> dbMap { get; set; } = new();
+    internal int modificationCount { get; set; } = 0;
+    internal int saveFrequency { get; set; } = 25;
+
+    public ArcoDB(int sf = 25)
+    {
+        saveFrequency = sf;
+    }
+
     public void Insert<T>(T obj) where T: IEnterable
     {
-        int hash = typeof(T).Name.GetHashCode();
-        
-        if(obj.id == null) { throw new NullReferenceException("Id was null"); }
-        
-        if(dbMap.ContainsKey(hash))
+        lock(dbMap)
         {
-            //vv can this be removed? vv
-            T newObj = obj.DeepClone(); // deep clone so changes in the database dont reflect in the program
-            if(dbMap[hash].ContainsKey(obj.id.hash))
+            string key = typeof(T).Name;
+        
+            if(obj.id == null) { throw new NullReferenceException("Id was null"); }
+        
+            if(dbMap.ContainsKey(key))
             {
-                dbMap[hash][obj.id.hash] = newObj;
+                //vv can this be removed? vv
+                T newObj = obj.DeepClone(); // deep clone so changes in the database dont reflect in the program
+                if(dbMap[key].ContainsKey(obj.id.raw))
+                {
+                    dbMap[key][obj.id.raw] = newObj;
+                } else {
+                    dbMap[key].Add(obj.id.raw, newObj);
+                }
             } else {
-                dbMap[hash].Add(obj.id.hash, newObj);
-            }
-        } else
-        {
-            dbMap.Add(hash, new());
-            Dictionary<int, IEnterable> collectionMap = dbMap[hash];
-            collectionMap.Add(obj.id.hash, obj);
+                dbMap.Add(key, new());
+                Dictionary<string, IEnterable> collectionMap = dbMap[key];
+                collectionMap.Add(obj.id.raw, obj);
+            }   
         }
+        
+        if(modificationCount == saveFrequency)
+        {
+            SaveState();
+            modificationCount = 0;
+            return;
+        }
+        
+        modificationCount = modificationCount + 1;
     }
     
     public T? QueryById<T>(T template) where T: IEnterable
     {
-        int hash = typeof(T).Name.GetHashCode();
+        string key = typeof(T).Name;
         
         if(template.id == null) { throw new NullReferenceException("Id was null"); }
         
-        if(dbMap.ContainsKey(hash))
+        if(dbMap.ContainsKey(key))
         {
-            if(dbMap[hash].ContainsKey(template.id.hash))
+            if(dbMap[key].ContainsKey(template.id.raw))
             {
-                return (T)dbMap[hash][template.id.hash];
+                return (T)dbMap[key][template.id.raw];
             } else
             {
                 return default(T);
@@ -59,17 +78,16 @@ public class ArcoDB
     
     public T? QueryById<T>(ArcoId id) where T: IEnterable
     {
-        int hash = typeof(T).Name.GetHashCode();
+        string key = typeof(T).Name;
         
         if(id == null) { throw new NullReferenceException("Id was null"); }
         
-        if(dbMap.ContainsKey(hash))
+        if(dbMap.ContainsKey(key))
         {
-            if(dbMap[hash].ContainsKey(id.hash))
+            if(dbMap[key].ContainsKey(id.raw))
             {
-                return (T)dbMap[hash][id.hash];
-            } else
-            {
+                return (T)dbMap[key][id.raw];
+            } else {
                 return default(T);
             }
         } else {
@@ -79,10 +97,10 @@ public class ArcoDB
 
     public T? Query<T>(T obj, params string[] toIgnore) where T: IEnterable
     {
-        int hash = typeof(T).Name.GetHashCode();
-        if(dbMap.ContainsKey(hash))
+        string key = typeof(T).Name;
+        if(dbMap.ContainsKey(key))
         {
-            foreach(KeyValuePair<int, IEnterable> vals in dbMap[hash])
+            foreach(KeyValuePair<string, IEnterable> vals in dbMap[key])
             {
                 //build comparison
                 CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
@@ -107,10 +125,10 @@ public class ArcoDB
     {
         List<T> ret = new();
         
-        int hash = typeof(T).Name.GetHashCode();
-        if(dbMap.ContainsKey(hash))
+        string key = typeof(T).Name;
+        if(dbMap.ContainsKey(key))
         {
-            foreach(KeyValuePair<int, IEnterable> vals in dbMap[hash])
+            foreach(KeyValuePair<string, IEnterable> vals in dbMap[key])
             {
                 //build comparison
                 CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
@@ -137,6 +155,9 @@ public class ArcoDB
         // function meant to return an object with all its referenced foreign objects
         throw new NotImplementedException("DeepQuery is not yet implemented!");
     }
-    
-    public void SaveState() { }
+
+    public void SaveState()
+    {
+        Snapshotter.Snapshot(this);
+    }
 }
