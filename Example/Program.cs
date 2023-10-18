@@ -5,19 +5,32 @@ using System.Reflection;
 using Arco;
 using Arco.Duplication;
 
-ArcoDB db = new();
+ArcoDB db = new(25, 10);
 Stopwatch w = new();
 
+for(int i = 0; i < 1000000; i++)
+{
+    MyObj obj = new();
+    db.Insert(obj);
+}
+
+w.Start();
+MyObj[]? x4 = db.Query(new MyObj(), "id");
+w.Stop();
+
+Console.WriteLine(x4!.Length);
+Console.WriteLine("Search time: " + w.Elapsed.TotalSeconds);
+
+/*
 w.Start();
 for(int i = 0; i < 10000000; i++)
 {
     MyObj obj = new();
     db.Insert(obj);
 }
-
 w.Stop();
 
-Console.WriteLine("write time: " + w.Elapsed.TotalSeconds);
+Console.WriteLine("write time: " + w.Elapsed.TotalSeconds + "s");
 w.Reset();
 
 MyObj objs = new();
@@ -29,16 +42,19 @@ obj2.id = objs.id;
 obj2.a = 100;
 
 w.Start();
-MyObj? obj3 = db.QueryById(objs);
-
+MyObj? obj3 = db.Query(objs);
 w.Stop();
 
-Console.WriteLine(obj3!.a);
-Console.WriteLine(w.Elapsed.TotalMicroseconds);
+Console.WriteLine("query time (searching by value not key): " + w.Elapsed.TotalSeconds + "s");
+w.Reset();
 
-db.Insert(new Test());
+w.Start();
+MyObj? obj4 = db.QueryById(objs);
+w.Stop();
 
-db.SaveState();
+Console.WriteLine("query time (searching by key): " + w.Elapsed.TotalMicroseconds + "ns");
+
+db.SaveState();*/
 
 class MyObj : IEnterable
 {

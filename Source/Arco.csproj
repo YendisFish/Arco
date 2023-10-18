@@ -11,6 +11,7 @@
     <PackageReference Include="DeepCloner" Version="0.10.4" />
     <PackageReference Include="DeepEqual" Version="4.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2" />
   </ItemGroup>
 
 </Project>

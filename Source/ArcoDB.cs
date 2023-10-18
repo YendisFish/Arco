@@ -1,12 +1,9 @@
-using System.Diagnostics;
-using System.Dynamic;
-using System.IO.MemoryMappedFiles;
-using System.Reflection;
 using Arco.Duplication;
-using Arco.Native;
 using Arco.Snapshotting;
 using DeepEqual.Syntax;
 using Force.DeepCloner;
+using Newtonsoft.Json.Bson;
+using Newtonsoft.Json;
 
 namespace Arco;
 
@@ -15,10 +12,12 @@ public class ArcoDB
     internal Dictionary<string, Dictionary<string, IEnterable>> dbMap { get; set; } = new();
     internal int modificationCount { get; set; } = 0;
     internal int saveFrequency { get; set; } = 25;
+    internal int threadThreshold { get; set; }
 
-    public ArcoDB(int sf = 25)
+    public ArcoDB(int SaveFrequency = 25, int ThreadThreashold = 8)
     {
-        saveFrequency = sf;
+        saveFrequency = SaveFrequency;
+        threadThreshold = ThreadThreashold;
     }
 
     public void Insert<T>(T obj) where T: IEnterable
@@ -26,7 +25,7 @@ public class ArcoDB
         lock(dbMap)
         {
             string key = typeof(T).Name;
-        
+            
             if(obj.id == null) { throw new NullReferenceException("Id was null"); }
         
             if(dbMap.ContainsKey(key))
@@ -94,60 +93,50 @@ public class ArcoDB
             throw new Exception("Type of given search object not found!");
         }
     }
-
-    public T? Query<T>(T obj, params string[] toIgnore) where T: IEnterable
-    {
-        string key = typeof(T).Name;
-        if(dbMap.ContainsKey(key))
-        {
-            foreach(KeyValuePair<string, IEnterable> vals in dbMap[key])
-            {
-                //build comparison
-                CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
-                foreach(string ignoreable in toIgnore)
-                {
-                    comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
-                }
-
-                if(comparison.Compare())
-                {
-                    return (T)(vals.Value.DeepClone());
-                }
-            }
-        } else
-        {
-            throw new Exception("Type of given search object not found!");
-        }
-        return default(T);
-    }
     
-    public T[]? QueryAll<T>(T obj, params string[] toIgnore) where T: IEnterable
+    public T[]? Query<T>(T obj, params string[] toIgnore) where T: IEnterable
     {
         List<T> ret = new();
-        
         string key = typeof(T).Name;
-        if(dbMap.ContainsKey(key))
-        {
-            foreach(KeyValuePair<string, IEnterable> vals in dbMap[key])
-            {
-                //build comparison
-                CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
-                foreach(string ignoreable in toIgnore)
-                {
-                    comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
-                }
+        
+        int parts = threadThreshold;
+        Dictionary<int, Dictionary<string, IEnterable>> dictPartitions = dbMap[key]
+            .Select((kv, index) => new { Index = index, Key = kv.Key, Value = kv.Value })
+            .GroupBy(item => item.Index % parts)
+            .ToDictionary(group => group.Key, group => group.ToDictionary(item => item.Key, item => item.Value));
 
-                if(comparison.Compare())
-                {
-                    ret.Add((T)(vals.Value.DeepClone()));
-                }
-            }
-        } else
+        List<Task> tasks = new();
+        foreach(Dictionary<string, IEnterable> dict in dictPartitions.Values)
         {
-            throw new Exception("Type of given search object not found!");
+            Task t = new Task(() => ThreadedQueryAll<T>(obj, toIgnore, dict, ret));
+            tasks.Add(t);
+            t.Start();
         }
 
+        Task.WaitAll(tasks.ToArray());
+
         return ret.ToArray();
+    }
+
+    internal void ThreadedQueryAll<T>(T obj, string[] toIgnore, Dictionary<string, IEnterable> toOperate, List<T> lst) where T: IEnterable
+    {
+        foreach(KeyValuePair<string, IEnterable> vals in toOperate)
+        {
+            //build comparison
+            CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
+            foreach(string ignoreable in toIgnore)
+            {
+                comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
+            }
+
+            if(comparison.Compare())
+            {
+                lock(lst)
+                {
+                    lst.Add((T)(vals.Value.DeepClone()));
+                }
+            }
+        }
     }
 
     public AmbiguousData DeepQuery<T>(T obj)
@@ -159,5 +148,24 @@ public class ArcoDB
     public void SaveState()
     {
         Snapshotter.Snapshot(this);
+    }
+
+    public static ArcoDB Load()
+    {
+        throw new NotImplementedException();
+        
+        ArcoDB db = new();
+        foreach(FileInfo fle in new DirectoryInfo("./arcodb/").GetFiles())
+        {
+            string TypeName = fle.Name.Replace("arco_", "").Split('.')[0]; 
+
+            using(FileStream fs = File.OpenRead(fle.FullName)) using(BsonReader rdr = new BsonReader(fs))
+            {
+                JsonSerializer serializer = new();
+                db.dbMap.Add(TypeName, serializer.Deserialize<Dictionary<string, IEnterable>>(rdr)!);
+            }
+        }
+        
+        return db;
     }
 }
