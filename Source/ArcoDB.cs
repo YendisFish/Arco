@@ -1,3 +1,4 @@
+using System.Reflection;
 using Arco.Duplication;
 using Arco.Snapshotting;
 using DeepEqual.Syntax;
@@ -10,6 +11,8 @@ namespace Arco;
 public class ArcoDB
 {
     internal Dictionary<string, Dictionary<string, IEnterable>> dbMap { get; set; } = new();
+    internal Dictionary<string, Dictionary<string, List<IEnterable>>> reverseLookup { get; set; }
+
     internal int modificationCount { get; set; } = 0;
     internal int saveFrequency { get; set; } = 25;
     internal int threadThreshold { get; set; }
@@ -137,6 +140,56 @@ public class ArcoDB
                 }
             }
         }
+    }
+
+    public T[] ReverseLookupQuery<T>(T obj, string[] toIgnore) where T: IEnterable
+    {
+        List<T> ret = new();
+
+        string type = typeof(T).Name;
+        PropertyInfo[] props = typeof(T).GetProperties().Where(x => toIgnore.Contains(x.Name)).ToArray();
+
+        foreach(PropertyInfo prop in props)
+        {
+            object? p = prop.GetValue(obj);
+            //if (p is null) { continue; }
+
+            string pStr = JsonConvert.SerializeObject(p);
+
+            Dictionary<string, List<IEnterable>> vals = new();
+            if(reverseLookup.TryGetValue(pStr, out vals))
+            {
+                List<IEnterable> forCurrent = new();
+                if(vals.TryGetValue(type, out forCurrent))
+                {
+                    foreach(IEnterable val in forCurrent)
+                    {
+                        bool allEquals = true;
+                        foreach(PropertyInfo badprop in props)
+                        {
+                            object? p2 = badprop.GetValue(val);
+                            object? p3 = badprop.GetValue(obj);
+                            if(!p2.IsDeepEqual(p3))
+                            {
+                                allEquals = false;
+                            }
+                        }
+
+                        if(allEquals)
+                        {
+                            ret.Add((T)val);
+                        }
+                    }
+                }
+            }
+        }
+
+        return ret.ToArray();
+    }
+
+    internal void ReverseInsert<T>(T obj) where T: IEnterable
+    {
+
     }
 
     public AmbiguousData DeepQuery<T>(T obj)
