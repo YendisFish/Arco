@@ -45,8 +45,11 @@ public class ArcoDB
                 dbMap.Add(key, new());
                 Dictionary<string, IEnterable> collectionMap = dbMap[key];
                 collectionMap.Add(obj.id.raw, obj);
-            }   
+            }
         }
+
+        //Thread reverseThread = new(new ThreadStart(() => ReverseInsert(obj)));
+        //reverseThread.Start();
         
         if(modificationCount == saveFrequency)
         {
@@ -142,6 +145,7 @@ public class ArcoDB
         }
     }
 
+    // most recommended query method! Is extremely fast and usable!
     public T[] ReverseLookupQuery<T>(T obj, string[] toIgnore) where T: IEnterable
     {
         List<T> ret = new();
@@ -164,7 +168,14 @@ public class ArcoDB
                 {
                     foreach(IEnterable val in forCurrent)
                     {
-                        bool allEquals = true;
+                        CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(val);
+
+                        foreach(string ignoreable in toIgnore)
+                        {
+                            comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
+                        }
+                        
+                        /*
                         foreach(PropertyInfo badprop in props)
                         {
                             object? p2 = badprop.GetValue(val);
@@ -173,9 +184,9 @@ public class ArcoDB
                             {
                                 allEquals = false;
                             }
-                        }
+                        }*/
 
-                        if(allEquals)
+                        if(comparison.Compare())
                         {
                             ret.Add((T)val);
                         }
@@ -189,7 +200,12 @@ public class ArcoDB
 
     internal void ReverseInsert<T>(T obj) where T: IEnterable
     {
+        lock(reverseLookup)
+        {
+            string key = typeof(T).Name;
 
+            throw new NotImplementedException();
+        }
     }
 
     public AmbiguousData DeepQuery<T>(T obj)
