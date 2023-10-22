@@ -159,7 +159,6 @@ public class ArcoDB
             foreach(PropertyInfo prop in props)
             {
                 object? p = prop.GetValue(obj);
-
                 string pStr = JsonConvert.SerializeObject(p);
 
                 Dictionary<string, List<IEnterable>> vals = new();
@@ -186,7 +185,7 @@ public class ArcoDB
                 }
             }
             
-            return ret.Distinct().ToArray();
+            return ret.ToArray();
         }
     }
 
@@ -210,7 +209,6 @@ public class ArcoDB
                 {
                     reverseLookup.Add(strVal, new Dictionary<string, List<IEnterable>>());
                     reverseLookup[strVal].Add(key, new List<IEnterable>());
-                    reverseLookup[strVal][key].Add(obj);
 
                     vals = reverseLookup[strVal];
                 }
@@ -221,8 +219,6 @@ public class ArcoDB
                 if(!vals.TryGetValue(key, out enterables))
                 {
                     vals.Add(key, new List<IEnterable>());
-                    vals[key].Add(obj);
-
                     enterables = vals[key];
                 }
                 
@@ -239,7 +235,7 @@ public class ArcoDB
                     }
                 }
 
-                if(contains) { enterables.Add(obj); }
+                if(!contains) { enterables.Add(obj); }
             }
         }
     }
