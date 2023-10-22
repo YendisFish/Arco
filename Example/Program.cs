@@ -8,17 +8,24 @@ using Arco.Duplication;
 ArcoDB db = new(25, 10);
 Stopwatch w = new();
 
-for(int i = 0; i < 1000000; i++)
+for(int i = 0; i < 100; i++)
 {
     MyObj obj = new();
     db.Insert(obj);
 }
 
+MyObj ob = new MyObj();
+ob.a = 100;
+db.Insert(ob);
+
+Console.WriteLine("Inserted");
+
 w.Start();
-MyObj[]? x4 = db.Query(new MyObj(), "id");
+MyObj[]? x4 = db.ReverseLookupQuery(ob, "id", "x", "b" );
 w.Stop();
 
-Console.WriteLine(x4!.Length);
+Console.WriteLine(x4.Length);
+Console.WriteLine(x4[0].id!.raw);
 Console.WriteLine("Search time: " + w.Elapsed.TotalSeconds);
 
 /*

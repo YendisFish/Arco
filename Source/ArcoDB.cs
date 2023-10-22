@@ -21,6 +21,7 @@ public class ArcoDB
     {
         saveFrequency = SaveFrequency;
         threadThreshold = ThreadThreashold;
+        reverseLookup = new();
     }
 
     public void Insert<T>(T obj) where T: IEnterable
@@ -48,8 +49,8 @@ public class ArcoDB
             }
         }
 
-        //Thread reverseThread = new(new ThreadStart(() => ReverseInsert(obj)));
-        //reverseThread.Start();
+        Thread reverseThread = new(new ThreadStart(() => ReverseInsert(obj)));
+        reverseThread.Start();
         
         if(modificationCount == saveFrequency)
         {
@@ -146,66 +147,107 @@ public class ArcoDB
     }
 
     // most recommended query method! Is extremely fast and usable!
-    public T[] ReverseLookupQuery<T>(T obj, string[] toIgnore) where T: IEnterable
+    public T[] ReverseLookupQuery<T>(T obj, params string[] toIgnore) where T: IEnterable
     {
-        List<T> ret = new();
-
-        string type = typeof(T).Name;
-        PropertyInfo[] props = typeof(T).GetProperties().Where(x => toIgnore.Contains(x.Name)).ToArray();
-
-        foreach(PropertyInfo prop in props)
+        lock(reverseLookup)
         {
-            object? p = prop.GetValue(obj);
-            //if (p is null) { continue; }
+            List<T> ret = new();
 
-            string pStr = JsonConvert.SerializeObject(p);
+            string type = typeof(T).Name;
+            PropertyInfo[] props = typeof(T).GetProperties().Where(x => toIgnore.Contains(x.Name)).ToArray();
 
-            Dictionary<string, List<IEnterable>> vals = new();
-            if(reverseLookup.TryGetValue(pStr, out vals))
+            foreach(PropertyInfo prop in props)
             {
-                List<IEnterable> forCurrent = new();
-                if(vals.TryGetValue(type, out forCurrent))
+                object? p = prop.GetValue(obj);
+
+                string pStr = JsonConvert.SerializeObject(p);
+
+                Dictionary<string, List<IEnterable>> vals = new();
+                if(reverseLookup.TryGetValue(pStr, out vals))
                 {
-                    foreach(IEnterable val in forCurrent)
+                    List<IEnterable> forCurrent = new();
+                    if(vals.TryGetValue(type, out forCurrent))
                     {
-                        CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(val);
+                        foreach(IEnterable val in forCurrent)
+                        {
+                            CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(val);
 
-                        foreach(string ignoreable in toIgnore)
-                        {
-                            comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
-                        }
-                        
-                        /*
-                        foreach(PropertyInfo badprop in props)
-                        {
-                            object? p2 = badprop.GetValue(val);
-                            object? p3 = badprop.GetValue(obj);
-                            if(!p2.IsDeepEqual(p3))
+                            foreach(string ignoreable in toIgnore)
                             {
-                                allEquals = false;
+                                comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
                             }
-                        }*/
 
-                        if(comparison.Compare())
-                        {
-                            ret.Add((T)val);
+                            if(comparison.Compare())
+                            {
+                                ret.Add((T)val);
+                            }
                         }
                     }
                 }
             }
+            
+            return ret.Distinct().ToArray();
         }
-
-        return ret.ToArray();
     }
 
     internal void ReverseInsert<T>(T obj) where T: IEnterable
     {
+        ReverseRemoveExists(obj);
+        
         lock(reverseLookup)
         {
             string key = typeof(T).Name;
 
-            throw new NotImplementedException();
+            PropertyInfo[] props = typeof(T).GetProperties();
+
+            foreach(PropertyInfo prop in props)
+            {
+                object? val = prop.GetValue(obj);
+                string strVal = JsonConvert.SerializeObject(val);
+
+                Dictionary<string, List<IEnterable>>? vals;
+                if(!reverseLookup.TryGetValue(strVal, out vals))
+                {
+                    reverseLookup.Add(strVal, new Dictionary<string, List<IEnterable>>());
+                    reverseLookup[strVal].Add(key, new List<IEnterable>());
+                    reverseLookup[strVal][key].Add(obj);
+
+                    vals = reverseLookup[strVal];
+                }
+
+                if (vals is null) { throw new NullReferenceException(); }
+
+                List<IEnterable>? enterables;
+                if(!vals.TryGetValue(key, out enterables))
+                {
+                    vals.Add(key, new List<IEnterable>());
+                    vals[key].Add(obj);
+
+                    enterables = vals[key];
+                }
+                
+                if(enterables is null) { throw new NullReferenceException(); }
+                
+                bool contains = false;
+                for(int i = 0; i < enterables.Count; i++)
+                {
+                    if(enterables[i].id == obj.id)
+                    {
+                        enterables[i] = obj;
+                        contains = true;
+                        break;
+                    }
+                }
+
+                if(contains) { enterables.Add(obj); }
+            }
         }
+    }
+
+    internal void ReverseRemoveExists<T>(T obj) where T: IEnterable
+    {
+        // remove an object from its locations in the reverse lookup table if it extists within it
+        lock(reverseLookup) { }
     }
 
     public AmbiguousData DeepQuery<T>(T obj)
