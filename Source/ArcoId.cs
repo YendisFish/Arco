@@ -4,6 +4,8 @@ public class ArcoId
 {
     public string raw { get; set; }
 
+    public static ArcoId Default => new ArcoId(Guid.NewGuid().ToString());
+    
     public ArcoId(string id)
     {
         raw = id;

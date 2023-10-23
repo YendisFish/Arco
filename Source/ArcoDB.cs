@@ -49,8 +49,7 @@ public class ArcoDB
             }
         }
 
-        Thread reverseThread = new(new ThreadStart(() => ReverseInsert(obj)));
-        reverseThread.Start();
+        ReverseInsert(obj);
         
         if(modificationCount == saveFrequency)
         {
