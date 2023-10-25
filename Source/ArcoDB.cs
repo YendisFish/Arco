@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Arco.Duplication;
 using Arco.Snapshotting;
 using DeepEqual.Syntax;
@@ -24,6 +25,33 @@ public class ArcoDB
         reverseLookup = new();
     }
 
+    public void PrintScan()
+    {
+        foreach(KeyValuePair<string, Dictionary<string, IEnterable>> table in dbMap)
+        {
+            foreach(KeyValuePair<string, IEnterable> entry in table.Value)
+            {
+                Console.WriteLine("key: " + entry.Key);
+                Console.WriteLine("val: " + JsonConvert.SerializeObject(entry.Value));
+            }
+        }
+    }
+    
+    public void PrintScanR()
+    {
+        foreach(KeyValuePair<string, Dictionary<string, List<IEnterable>>> table in reverseLookup)
+        {
+            Console.WriteLine("k: " + table.Key);
+            Console.WriteLine("v: " + table.Value);
+            /*
+            foreach(KeyValuePair<string, List<IEnterable>> entry in table.Value)
+            {
+                Console.WriteLine("key: " + entry.Key);
+                Console.WriteLine("val: " + JsonConvert.SerializeObject(entry.Value));
+            }*/
+        }
+    }
+    
     public void Insert<T>(T obj) where T: IEnterable
     {
         lock(dbMap)
@@ -53,7 +81,7 @@ public class ArcoDB
         
         if(modificationCount == saveFrequency)
         {
-            SaveState();
+            Snapshotter.Snapshot(this);
             modificationCount = 0;
             return;
         }
@@ -99,51 +127,6 @@ public class ArcoDB
             throw new Exception("Type of given search object not found!");
         }
     }
-    
-    public T[]? Query<T>(T obj, params string[] toIgnore) where T: IEnterable
-    {
-        List<T> ret = new();
-        string key = typeof(T).Name;
-        
-        int parts = threadThreshold;
-        Dictionary<int, Dictionary<string, IEnterable>> dictPartitions = dbMap[key]
-            .Select((kv, index) => new { Index = index, Key = kv.Key, Value = kv.Value })
-            .GroupBy(item => item.Index % parts)
-            .ToDictionary(group => group.Key, group => group.ToDictionary(item => item.Key, item => item.Value));
-
-        List<Task> tasks = new();
-        foreach(Dictionary<string, IEnterable> dict in dictPartitions.Values)
-        {
-            Task t = new Task(() => ThreadedQueryAll<T>(obj, toIgnore, dict, ret));
-            tasks.Add(t);
-            t.Start();
-        }
-
-        Task.WaitAll(tasks.ToArray());
-
-        return ret.ToArray();
-    }
-
-    internal void ThreadedQueryAll<T>(T obj, string[] toIgnore, Dictionary<string, IEnterable> toOperate, List<T> lst) where T: IEnterable
-    {
-        foreach(KeyValuePair<string, IEnterable> vals in toOperate)
-        {
-            //build comparison
-            CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(vals.Value);
-            foreach(string ignoreable in toIgnore)
-            {
-                comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
-            }
-
-            if(comparison.Compare())
-            {
-                lock(lst)
-                {
-                    lst.Add((T)(vals.Value.DeepClone()));
-                }
-            }
-        }
-    }
 
     // most recommended query method! Is extremely fast and usable!
     public T[] ReverseLookupQuery<T>(T obj, params string[] toIgnore) where T: IEnterable
@@ -153,12 +136,48 @@ public class ArcoDB
             List<T> ret = new();
 
             string type = typeof(T).Name;
-            PropertyInfo[] props = typeof(T).GetProperties().Where(x => toIgnore.Contains(x.Name)).ToArray();
-
+            
+            IEnumerable<PropertyInfo> props = typeof(T).GetProperties().Where(x => toIgnore.Contains(x.Name) != true);
+            IEnumerable<FieldInfo> fields = typeof(T).GetFields().Where(x => toIgnore.Contains(x.Name) != true);
+            
+            //Console.WriteLine("len p " + props.Count());
+            //Console.WriteLine("len f " + fields.Count());
+            
             foreach(PropertyInfo prop in props)
             {
                 object? p = prop.GetValue(obj);
                 string pStr = JsonConvert.SerializeObject(p);
+                Console.WriteLine("test: " + pStr);
+
+                Dictionary<string, List<IEnterable>> vals = new();
+                if(reverseLookup.TryGetValue(pStr, out vals))
+                {
+                    List<IEnterable> forCurrent = new();
+                    if(vals.TryGetValue(type, out forCurrent))
+                    {
+                        foreach(IEnterable val in forCurrent)
+                        {
+                            CompareSyntax<T, IEnterable> comparison = obj.WithDeepEqual(val);
+
+                            foreach(string ignoreable in toIgnore)
+                            {
+                                comparison = comparison.IgnoreProperty(Comparisons.CreateMemberExpression<T>(ignoreable));
+                            }
+
+                            if(comparison.Compare())
+                            {
+                                ret.Add((T)val);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            foreach(FieldInfo field in fields)
+            {
+                object? p = field.GetValue(obj);
+                string pStr = JsonConvert.SerializeObject(p);
+                Console.WriteLine("test: " + pStr);
 
                 Dictionary<string, List<IEnterable>> vals = new();
                 if(reverseLookup.TryGetValue(pStr, out vals))
@@ -190,8 +209,6 @@ public class ArcoDB
 
     internal void ReverseInsert<T>(T obj) where T: IEnterable
     {
-        ReverseRemoveExists(obj);
-        
         lock(reverseLookup)
         {
             string key = typeof(T).Name;
@@ -241,8 +258,48 @@ public class ArcoDB
 
     internal void ReverseRemoveExists<T>(T obj) where T: IEnterable
     {
-        // remove an object from its locations in the reverse lookup table if it extists within it
-        lock(reverseLookup) { }
+        lock(reverseLookup)
+        {
+            string key = typeof(T).Name;
+
+            PropertyInfo[] props = typeof(T).GetProperties();
+
+            foreach(PropertyInfo prop in props)
+            {
+                object? val = prop.GetValue(obj);
+                string strVal = JsonConvert.SerializeObject(val);
+
+                Dictionary<string, List<IEnterable>>? vals;
+                if(!reverseLookup.TryGetValue(strVal, out vals))
+                {
+                    reverseLookup.Add(strVal, new Dictionary<string, List<IEnterable>>());
+                    reverseLookup[strVal].Add(key, new List<IEnterable>());
+
+                    vals = reverseLookup[strVal];
+                }
+
+                if (vals is null) { throw new NullReferenceException(); }
+
+                List<IEnterable>? enterables;
+                if(!vals.TryGetValue(key, out enterables))
+                {
+                    vals.Add(key, new List<IEnterable>());
+                    enterables = vals[key];
+                }
+                
+                if(enterables is null) { throw new NullReferenceException(); }
+                
+                for(int i = 0; i < enterables.Count; i++)
+                {
+                    if (enterables[i].id == obj.id)
+                    {
+                        enterables[i] = obj;
+                        reverseLookup[strVal][key].Remove(enterables[i]);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     public AmbiguousData DeepQuery<T>(T obj)
@@ -251,25 +308,31 @@ public class ArcoDB
         throw new NotImplementedException("DeepQuery is not yet implemented!");
     }
 
-    public void SaveState()
+    public void Snapshot()
     {
-        Snapshotter.Snapshot(this);
+        Snapshotter.WaitForSaveable(this);
     }
 
     public static ArcoDB Load()
     {
-        throw new NotImplementedException();
+        //throw new NotImplementedException();
         
         ArcoDB db = new();
-        foreach(FileInfo fle in new DirectoryInfo("./arcodb/").GetFiles())
+        
+        using(FileStream fs = File.OpenRead("./arcodb/arco.bson")) using(BsonDataReader rdr = new BsonDataReader(fs))
         {
-            string TypeName = fle.Name.Replace("arco_", "").Split('.')[0]; 
+            JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+            db.dbMap = serializer.Deserialize<Dictionary<string, Dictionary<string, IEnterable>>>(rdr)!;
 
-            using(FileStream fs = File.OpenRead(fle.FullName)) using(BsonReader rdr = new BsonReader(fs))
-            {
-                JsonSerializer serializer = new();
-                db.dbMap.Add(TypeName, serializer.Deserialize<Dictionary<string, IEnterable>>(rdr)!);
-            }
+            Console.WriteLine(db.dbMap.Keys.Count);
+        }
+        
+        using(FileStream fs = File.OpenRead("./arcodb/arcoReverse.bson")) using(BsonDataReader rdr = new BsonDataReader(fs))
+        {
+            JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+            db.reverseLookup = serializer.Deserialize<Dictionary<string, Dictionary<string, List<IEnterable>>>>(rdr)!;
+            
+            Console.WriteLine(db.reverseLookup.Keys.Count);
         }
         
         return db;

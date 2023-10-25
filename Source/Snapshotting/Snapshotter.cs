@@ -17,34 +17,55 @@ public static class Snapshotter
             t.Start();   
         }
     }
+
+    public static void WaitForSaveable(ArcoDB db)
+    {
+        while (isSaving) ;
+        
+        Task t = new Task(() => ThreadSnapshot(db));
+        currentTask = t;
+        t.Start(); 
+    }
     
     internal static void ThreadSnapshot(ArcoDB db)
     {
         isSaving = true;
-        
-        if(!Directory.Exists("./arcodb/"))
+
+        lock(db.dbMap)
         {
-            Directory.CreateDirectory("./arcodb/");
-        }
-        
-        foreach(string table in db.dbMap.Keys)
-        {
-            if(!File.Exists($"./arcodb/arco_{table}.bson"))
+            if(!Directory.Exists("./arcodb/"))
             {
-                using(FileStream stream = File.Create($"./arcodb/arco_{table}.bson")) using(BsonWriter writer = new(stream))
+                Directory.CreateDirectory("./arcodb/");
+            }
+        
+            if(!File.Exists($"./arcodb/arco.bson"))
+            {
+                using(FileStream stream = File.Create($"./arcodb/arco.bson")) using(BsonDataWriter writer = new(stream))
                 {
-                    JsonSerializer serializer = new();
-                    serializer.Serialize(writer, db.dbMap[table]);
+                    JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+                    serializer.Serialize(writer, db.dbMap);
+                }
+                
+                using(FileStream stream = File.Create($"./arcodb/arcoReverse.bson")) using(BsonDataWriter writer = new(stream))
+                {
+                    JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+                    serializer.Serialize(writer, db.reverseLookup);
                 }
             } else {
-                using(FileStream stream = File.OpenWrite($"./arcodb/arco_{table}.bson")) using(BsonWriter writer = new(stream))
+                using(FileStream stream = File.OpenWrite($"./arcodb/arco.bson")) using(BsonDataWriter writer = new(stream))
                 {
-                    JsonSerializer serializer = new();
-                    serializer.Serialize(writer, db.dbMap[table]);
+                    JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+                    serializer.Serialize(writer, db.dbMap);
+                }
+                
+                using(FileStream stream = File.OpenWrite($"./arcodb/arcoReverse.bson")) using(BsonDataWriter writer = new(stream))
+                {
+                    JsonSerializer serializer = new JsonSerializer() { TypeNameHandling = TypeNameHandling.All };
+                    serializer.Serialize(writer, db.reverseLookup);
                 }
             }
         }
-
+        
         isSaving = false;
     }
 }

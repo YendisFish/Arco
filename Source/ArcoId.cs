@@ -1,3 +1,5 @@
+using Newtonsoft.Json;
+
 namespace Arco;
 
 public class ArcoId
@@ -6,6 +8,7 @@ public class ArcoId
 
     public static ArcoId Default => new ArcoId(Guid.NewGuid().ToString());
     
+    [JsonConstructor]
     public ArcoId(string id)
     {
         raw = id;
